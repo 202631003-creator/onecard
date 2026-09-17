@@ -94,6 +94,8 @@
 
         .card.red { color: #d32f2f; }
         .card.black { color: #212121; }
+        
+        /* 조커 스타일 */
         .card.color-joker {
             background: linear-gradient(135deg, #fff3e0, #ffe0b2);
             border: 2px solid #ff9800;
@@ -103,6 +105,18 @@
             background: linear-gradient(135deg, #f5f5f5, #e0e0e0);
             border: 2px solid #424242;
             color: #212121;
+        }
+
+        /* 죠타로 카드 스타일 */
+        .card.bw-jotaro {
+            background: linear-gradient(135deg, #37474f, #212121);
+            border: 2px solid #9e9e9e;
+            color: #ffffff;
+        }
+        .card.color-jotaro {
+            background: linear-gradient(135deg, #4a148c, #880e4f);
+            border: 2px solid #e040fb;
+            color: #ffe57f;
         }
 
         .card.back {
@@ -175,7 +189,7 @@
         .end-turn-btn { background-color: #e91e63; }
         .end-turn-btn:hover { background-color: #c2185b; }
 
-        /* 7 카드 지정 모양 선택 모달 */
+        /* 모달 스타일 */
         .modal {
             display: none;
             position: fixed;
@@ -281,6 +295,7 @@
         let isGameOver = false;
 
         let attackStack = 0;
+        let isUnblockableAttack = false; // 방어 불가 공격 플래그 (죠타로)
         let currentSuit = '';
         let hasPlayedInTurn = false;
 
@@ -293,6 +308,7 @@
             isGameOver = false;
             isPlayerTurn = true;
             attackStack = 0;
+            isUnblockableAttack = false;
             hasPlayedInTurn = false;
 
             for (let i = 0; i < 7; i++) {
@@ -301,7 +317,8 @@
             }
 
             let firstCard = deck.pop();
-            while (['A', '2', '3', '7', 'J', 'Q', 'K', 'JOKER_BW', 'JOKER_COLOR'].includes(firstCard.value)) {
+            const specialValues = ['A', '2', '3', '7', 'J', 'Q', 'K', 'JOKER_BW', 'JOKER_COLOR', 'JOTARO_BW', 'JOTARO_COLOR'];
+            while (specialValues.includes(firstCard.value)) {
                 deck.unshift(firstCard);
                 shuffle(deck);
                 firstCard = deck.pop();
@@ -323,6 +340,11 @@
             // 조커 2장 추가
             newDeck.push({ suit: 'BLACK', value: 'JOKER_BW' });
             newDeck.push({ suit: 'COLOR', value: 'JOKER_COLOR' });
+
+            // 죠타로 카드 2장 추가
+            newDeck.push({ suit: 'BLACK', value: 'JOTARO_BW' });
+            newDeck.push({ suit: 'COLOR', value: 'JOTARO_COLOR' });
+
             return newDeck;
         }
 
@@ -334,32 +356,38 @@
         }
 
         function isValidMove(card, topCard) {
-            // 공격 누적 처리 중일 때
+            // 방어 불가능한 죠타로 공격을 받는 중일 경우 어떤 카드도 낼 수 없음
+            if (attackStack > 0 && isUnblockableAttack) {
+                return false;
+            }
+
+            // 일반 공격 누적 처리 중일 때
             if (attackStack > 0) {
                 if (card.value === '3') return true; // 방어
                 if (card.value === 'JOKER_COLOR' || card.value === 'JOKER_BW') return true; // 조커 응수
+                if (card.value === 'JOTARO_COLOR' || card.value === 'JOTARO_BW') return true; // 죠타로 응수
                 if (card.value === 'A' || card.value === '2') return true; // 공격 카드로 응수
                 return false;
             }
 
-            // 한 턴에 이미 카드를 제출한 후라면 같은 숫자(또는 조커)만 연속 제출 가능
+            // 한 턴에 이미 카드를 제출한 후라면 같은 숫자(또는 동일 특수 카드)만 연속 제출 가능
             if (hasPlayedInTurn) {
                 return card.value === topCard.value;
             }
 
-            // 조커 제출 조건
-            if (card.value === 'JOKER_BW') {
+            // 특수 카드(조커, 죠타로) 제출 조건
+            if (card.value === 'JOKER_BW' || card.value === 'JOTARO_BW') {
                 return currentSuit === '♠' || currentSuit === '♣' || currentSuit === 'BLACK';
             }
-            if (card.value === 'JOKER_COLOR') {
+            if (card.value === 'JOKER_COLOR' || card.value === 'JOTARO_COLOR') {
                 return currentSuit === '♥' || currentSuit === '♦' || currentSuit === 'COLOR';
             }
 
-            // 바닥에 조커가 놓여있을 때 일반 카드 처리
-            if (topCard.value === 'JOKER_BW') {
+            // 바닥에 특수 카드가 놓여있을 때 일반 카드 처리
+            if (topCard.value === 'JOKER_BW' || topCard.value === 'JOTARO_BW') {
                 return card.suit === '♠' || card.suit === '♣';
             }
-            if (topCard.value === 'JOKER_COLOR') {
+            if (topCard.value === 'JOKER_COLOR' || topCard.value === 'JOTARO_COLOR') {
                 return card.suit === '♥' || card.suit === '♦';
             }
 
@@ -406,7 +434,7 @@
                 const canPlayMoreSameValue = playerHand.some(card => card.value === selectedCard.value);
 
                 if (canPlayMoreSameValue) {
-                    setMessage(`같은 숫자(${getCardLabel(selectedCard.value)}) 카드를 더 내거나 [턴 넘기기]를 누르세요.`);
+                    setMessage(`같은 카드(${getCardLabel(selectedCard.value)})를 더 내거나 [턴 넘기기]를 누르세요.`);
                 } else {
                     endPlayerTurn();
                     return;
@@ -414,7 +442,11 @@
 
                 updateUI();
             } else {
-                setMessage("낼 수 없는 카드입니다!");
+                if (attackStack > 0 && isUnblockableAttack) {
+                    setMessage("💥 죠타로의 공격은 방어하거나 넘길 수 없습니다! 덱을 눌러 카드를 뽑으세요.");
+                } else {
+                    setMessage("낼 수 없는 카드입니다!");
+                }
             }
         }
 
@@ -441,10 +473,15 @@
                 attackStack += 5;
             } else if (card.value === 'JOKER_COLOR') {
                 attackStack += 7;
+            } else if (card.value === 'JOTARO_BW' || card.value === 'JOTARO_COLOR') {
+                attackStack += 5;
+                isUnblockableAttack = true; // 방어 불가 설정
+                setMessage("👊 오라오라오라! 죠타로 등장! 방어 불가능한 +5장 공격!");
             } else if (card.value === '3') {
                 if (attackStack > 0) {
                     setMessage("🛡️ 3 카드로 모든 공격을 방어했습니다!");
                     attackStack = 0;
+                    isUnblockableAttack = false;
                 }
             }
         }
@@ -468,11 +505,16 @@
             }
 
             if (attackStack > 0) {
-                setMessage(`공격을 막지 못해 카드 ${attackStack}장을 가져옵니다.`);
+                const msg = isUnblockableAttack 
+                    ? `💥 죠타로의 공격을 막지 못해 카드 ${attackStack}장을 가져옵니다!` 
+                    : `공격을 막지 못해 카드 ${attackStack}장을 가져옵니다.`;
+                setMessage(msg);
+
                 for (let i = 0; i < attackStack; i++) {
                     drawCard(playerHand);
                 }
                 attackStack = 0;
+                isUnblockableAttack = false;
             } else {
                 drawCard(playerHand);
                 setMessage("카드를 1장 뽑았습니다.");
@@ -527,6 +569,8 @@
                         }
                         currentSuit = bestSuit;
                         setMessage(`AI가 7을 내고 진행 모양을 [ ${currentSuit} ](으)로 바꿨습니다!`);
+                    } else if (playedCard.value.includes('JOTARO')) {
+                        setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 냈습니다! 절대 피할 수 없습니다!`);
                     } else {
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 냈습니다.`);
                     }
@@ -549,11 +593,16 @@
                 } else {
                     if (!playedAny) {
                         if (attackStack > 0) {
-                            setMessage(`AI가 방어하지 못해 ${attackStack}장의 카드를 가져갔습니다.`);
+                            const msg = isUnblockableAttack 
+                                ? `💥 AI가 죠타로의 공격을 받아 ${attackStack}장의 카드를 가져갔습니다!` 
+                                : `AI가 방어하지 못해 ${attackStack}장의 카드를 가져갔습니다.`;
+                            setMessage(msg);
+
                             for (let i = 0; i < attackStack; i++) {
                                 drawCard(aiHand);
                             }
                             attackStack = 0;
+                            isUnblockableAttack = false;
                         } else {
                             drawCard(aiHand);
                             setMessage("AI가 낼 카드가 없어 1장 뽑았습니다.");
@@ -590,6 +639,8 @@
         function getCardLabel(value) {
             if (value === 'JOKER_BW') return '🃏 흑백조커';
             if (value === 'JOKER_COLOR') return '🌈 컬러조커';
+            if (value === 'JOTARO_BW') return '⭐ 흑백죠타로';
+            if (value === 'JOTARO_COLOR') return '⭐ 컬러죠타로';
             return value;
         }
 
@@ -634,7 +685,13 @@
             currentSuitDiv.innerText = `현재 진행 모양: [ ${currentSuit} ]`;
 
             const attackStatusDiv = document.getElementById('attack-status');
-            attackStatusDiv.innerText = attackStack > 0 ? `⚠️ 누적 공격: +${attackStack}장` : '';
+            if (attackStack > 0) {
+                attackStatusDiv.innerText = isUnblockableAttack 
+                    ? `💥 누적 절대 공격: +${attackStack}장 (방어/응수 불가!)` 
+                    : `⚠️ 누적 공격: +${attackStack}장`;
+            } else {
+                attackStatusDiv.innerText = '';
+            }
 
             // AI 카드
             const aiHandDiv = document.getElementById('ai-hand');
@@ -686,6 +743,20 @@
                     <div>JK</div>
                     <div style="text-align: center; font-size: 22px;">🌈</div>
                     <div style="text-align: right;">JK</div>
+                `;
+            } else if (card.value === 'JOTARO_BW') {
+                cardEl.className = 'card bw-jotaro';
+                cardEl.innerHTML = `
+                    <div style="font-size: 12px;">ORA</div>
+                    <div style="text-align: center; font-size: 20px;">⭐</div>
+                    <div style="text-align: right; font-size: 12px;">BW</div>
+                `;
+            } else if (card.value === 'JOTARO_COLOR') {
+                cardEl.className = 'card color-jotaro';
+                cardEl.innerHTML = `
+                    <div style="font-size: 12px;">ORA</div>
+                    <div style="text-align: center; font-size: 20px;">⭐</div>
+                    <div style="text-align: right; font-size: 12px;">CLR</div>
                 `;
             } else {
                 const isRed = card.suit === '♥' || card.suit === '♦';
