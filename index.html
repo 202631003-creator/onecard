@@ -127,19 +127,19 @@
             height: 22px;
         }
 
+        .suit-msg {
+            font-size: 18px;
+            font-weight: bold;
+            color: #00e676;
+            height: 22px;
+        }
+
         .turn-indicator {
             font-size: 20px;
             font-weight: bold;
             padding: 5px 15px;
             border-radius: 20px;
             background: rgba(255, 255, 255, 0.2);
-        }
-
-        .action-btn-group {
-            margin-top: 10px;
-            display: flex;
-            gap: 10px;
-            justify-content: center;
         }
 
         button {
@@ -155,9 +155,46 @@
         }
 
         button:hover { background-color: #f57c00; }
-        button:disabled { background-color: #757575; cursor: not-allowed; }
-        .end-turn-btn { background-color: #e91e63; }
-        .end-turn-btn:hover { background-color: #c2185b; }
+
+        /* 7 카드 지정 모양 선택 모달 팝업 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .modal-content {
+            background: white;
+            color: black;
+            padding: 25px;
+            border-radius: 12px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        .suit-btn-group {
+            display: flex;
+            gap: 15px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+
+        .suit-btn {
+            font-size: 30px;
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 2px solid #333;
+            background: #f0f0f0;
+            cursor: pointer;
+        }
+
+        .suit-btn.red { color: #d32f2f; }
+        .suit-btn.black { color: #212121; }
+        .suit-btn:hover { background: #e0e0e0; }
     </style>
 </head>
 <body>
@@ -184,6 +221,7 @@
             </div>
         </div>
 
+        <div class="suit-msg" id="current-suit-status"></div>
         <div class="attack-msg" id="attack-status"></div>
         <div class="status-msg" id="message"></div>
 
@@ -191,13 +229,23 @@
         <div class="player-area">
             <h2>👤 내 카드 (<span id="player-count">0</span>장)</h2>
             <div class="hand" id="player-hand"></div>
-            <div class="action-btn-group">
-                <button class="end-turn-btn" id="end-turn-btn" onclick="endPlayerTurn()" style="display: none;">턴 넘기기 (같은 숫자 제출 완료)</button>
-            </div>
         </div>
     </div>
 
     <button onclick="initGame()" style="margin-top: 10px;">게임 재시작</button>
+
+    <!-- 모양 선택 모달 -->
+    <div class="modal" id="suit-modal">
+        <div class="modal-content">
+            <h3>7 카드의 효과! 바꿀 모양을 선택하세요.</h3>
+            <div class="suit-btn-group">
+                <button class="suit-btn black" onclick="selectSuit('♠')">♠</button>
+                <button class="suit-btn red" onclick="selectSuit('♥')">♥</button>
+                <button class="suit-btn red" onclick="selectSuit('♦')">♦</button>
+                <button class="suit-btn black" onclick="selectSuit('♣')">♣</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         const SUITS = ['♠', '♥', '♦', '♣'];
@@ -211,7 +259,7 @@
         let isGameOver = false;
 
         let attackStack = 0; // 누적 공격 장수
-        let hasPlayedInTurn = false; // 한 턴에 카드를 이미 냈는지 여부 (연속 제출 제어)
+        let currentSuit = ''; // 7번 카드 등으로 지정된 현재 진행 문양
 
         function initGame() {
             deck = createDeck();
@@ -222,7 +270,6 @@
             isGameOver = false;
             isPlayerTurn = true;
             attackStack = 0;
-            hasPlayedInTurn = false;
 
             for (let i = 0; i < 7; i++) {
                 playerHand.push(deck.pop());
@@ -230,12 +277,13 @@
             }
 
             let firstCard = deck.pop();
-            while (['A', '2', '3', 'J', 'Q', 'K'].includes(firstCard.value)) {
+            while (['A', '2', '3', '7', 'J', 'Q', 'K'].includes(firstCard.value)) {
                 deck.unshift(firstCard);
                 shuffle(deck);
                 firstCard = deck.pop();
             }
             discardPile.push(firstCard);
+            currentSuit = firstCard.suit;
 
             updateUI();
             setMessage("게임을 시작합니다! 당신의 순서입니다.");
@@ -258,21 +306,17 @@
             }
         }
 
+        // 카드 제출 규칙 검사
         function isValidMove(card, topCard) {
-            // 공격 누적 중일 때는 공격 카드(A, 2)나 방어 카드(3)만 제출 가능
+            // 공격 처리 중일 때는 공격(A, 2) 또는 방어(3) 카드만 가능
             if (attackStack > 0) {
-                if (card.value === '3') return true; // 방어
-                if (topCard.value === 'A') return card.value === 'A'; // A 공격에는 A로만 응수
-                if (topCard.value === '2') return card.value === '2' || card.value === 'A'; // 2 공격에는 2, A로 응수
+                if (card.value === '3') return true;
+                if (topCard.value === 'A') return card.value === 'A';
+                if (topCard.value === '2') return card.value === '2' || card.value === 'A';
             }
 
-            // 한 턴에 이미 카드를 제출했으면, 연속으로 낼 수 있는 카드는 같은 숫자만 가능
-            if (hasPlayedInTurn) {
-                return card.value === topCard.value;
-            }
-
-            // 기본 규칙: 같은 문양 또는 같은 숫자
-            return card.suit === topCard.suit || card.value === topCard.value;
+            // 기본 원카드 규칙: 현재 지정된 모양과 일치하거나 숫자가 같아야 함
+            return card.suit === currentSuit || card.value === topCard.value;
         }
 
         function playCard(index) {
@@ -284,31 +328,42 @@
             if (isValidMove(selectedCard, topCard)) {
                 playerHand.splice(index, 1);
                 discardPile.push(selectedCard);
-                hasPlayedInTurn = true;
+                currentSuit = selectedCard.suit; // 기본적으로 낸 카드의 모양으로 지정
 
-                // 특수 및 공격 로직 처리
                 applyCardEffect(selectedCard);
 
                 if (checkWinner()) return;
 
-                // 추가 제출 여부 판별
-                const canPlayMoreSameValue = playerHand.some(card => card.value === selectedCard.value);
-
-                if (['K', 'Q', 'J'].includes(selectedCard.value)) {
-                    setMessage(`${selectedCard.value}를 냈습니다! 한 번 더 내실 수 있습니다.`);
-                    hasPlayedInTurn = false; // 다시 자유롭게 1장 더 낼 수 있음
-                } else if (canPlayMoreSameValue) {
-                    setMessage(`같은 숫자(${selectedCard.value}) 카드를 더 내거나 [턴 넘기기]를 누르세요.`);
-                } else {
-                    // 더 내 같은 숫자가 없으면 자동 턴 종료
-                    endPlayerTurn();
-                    return;
+                // 7 카드를 낸 경우 모달창으로 모양 선택
+                if (selectedCard.value === '7') {
+                    document.getElementById('suit-modal').style.display = 'flex';
+                    updateUI();
+                    return; // 모양 선택 후 턴 전환 처리
                 }
 
-                updateUI();
+                if (['K', 'Q', 'J'].includes(selectedCard.value)) {
+                    setMessage(`${selectedCard.value}를 냈습니다! 한 번 더 내세요.`);
+                    updateUI();
+                } else {
+                    isPlayerTurn = false;
+                    updateUI();
+                    setMessage("AI가 생각 중입니다...");
+                    setTimeout(aiTurn, 1200);
+                }
             } else {
-                setMessage("낼 수 없는 카드입니다!");
+                setMessage("낼 수 없는 카드입니다! (모양이나 숫자가 맞지 않습니다)");
             }
+        }
+
+        // 7 카드 팝업에서 모양 선택 시 호출
+        function selectSuit(suit) {
+            currentSuit = suit;
+            document.getElementById('suit-modal').style.display = 'none';
+            setMessage(`지정 모양이 [ ${suit} ](으)로 변경되었습니다.`);
+
+            isPlayerTurn = false;
+            updateUI();
+            setTimeout(aiTurn, 1200);
         }
 
         function applyCardEffect(card) {
@@ -324,23 +379,8 @@
             }
         }
 
-        function endPlayerTurn() {
-            if (!isPlayerTurn || isGameOver) return;
-
-            hasPlayedInTurn = false;
-            isPlayerTurn = false;
-            updateUI();
-            setMessage("AI가 생각 중입니다...");
-            setTimeout(aiTurn, 1200);
-        }
-
         function playerDraw() {
             if (!isPlayerTurn || isGameOver) return;
-
-            if (hasPlayedInTurn) {
-                setMessage("이미 카드를 냈습니다. [턴 넘기기]를 눌러 차례를 마치세요.");
-                return;
-            }
 
             if (attackStack > 0) {
                 setMessage(`공격을 막지 못해 카드 ${attackStack}장을 가져옵니다.`);
@@ -353,7 +393,6 @@
                 setMessage("카드를 1장 뽑았습니다.");
             }
 
-            hasPlayedInTurn = false;
             isPlayerTurn = false;
             updateUI();
 
@@ -365,58 +404,55 @@
         function aiTurn() {
             if (isGameOver) return;
 
-            hasPlayedInTurn = false;
-            let playedAny = false;
+            const topCard = getTopCard();
+            const validCardIndex = aiHand.findIndex(card => isValidMove(card, topCard));
 
-            // AI 연속 제출 루프
-            while (true) {
-                const topCard = getTopCard();
-                const validCardIndex = aiHand.findIndex(card => isValidMove(card, topCard));
+            if (validCardIndex !== -1) {
+                const playedCard = aiHand.splice(validCardIndex, 1)[0];
+                discardPile.push(playedCard);
+                currentSuit = playedCard.suit;
 
-                if (validCardIndex !== -1) {
-                    const playedCard = aiHand.splice(validCardIndex, 1)[0];
-                    discardPile.push(playedCard);
-                    hasPlayedInTurn = true;
-                    playedAny = true;
+                applyCardEffect(playedCard);
 
-                    applyCardEffect(playedCard);
+                if (checkWinner()) return;
 
-                    if (checkWinner()) return;
-
-                    if (['K', 'Q', 'J'].includes(playedCard.value)) {
-                        setMessage(`AI가 [${playedCard.suit} ${playedCard.value}]를 내고 한 번 더 진행합니다!`);
-                        hasPlayedInTurn = false;
-                        updateUI();
-                        setTimeout(aiTurn, 1200);
-                        return;
-                    }
-
-                    // 같은 숫자가 손에 더 있으면 연속으로 냄
-                    const hasMoreSameValue = aiHand.some(card => card.value === playedCard.value);
-                    if (hasMoreSameValue) {
-                        continue;
-                    } else {
-                        setMessage(`AI가 카드를 내고 턴을 마쳤습니다.`);
-                        break;
-                    }
-                } else {
-                    if (!playedAny) {
-                        if (attackStack > 0) {
-                            setMessage(`AI가 방어하지 못해 ${attackStack}장의 카드를 가져갔습니다.`);
-                            for (let i = 0; i < attackStack; i++) {
-                                drawCard(aiHand);
-                            }
-                            attackStack = 0;
-                        } else {
-                            drawCard(aiHand);
-                            setMessage("AI가 낼 카드가 없어 1장 뽑았습니다.");
+                // AI가 7 카드를 냈을 때, 자신이 가장 많이 가진 모양 선택
+                if (playedCard.value === '7') {
+                    const suitCounts = { '♠': 0, '♥': 0, '♦': 0, '♣': 0 };
+                    aiHand.forEach(c => suitCounts[c.suit]++);
+                    let bestSuit = '♠';
+                    let maxCount = -1;
+                    for (let s in suitCounts) {
+                        if (suitCounts[s] > maxCount) {
+                            maxCount = suitCounts[s];
+                            bestSuit = s;
                         }
                     }
-                    break;
+                    currentSuit = bestSuit;
+                    setMessage(`AI가 7을 내고 진행 모양을 [ ${currentSuit} ](으)로 바꿨습니다!`);
+                } else {
+                    setMessage(`AI가 [${playedCard.suit} ${playedCard.value}]를 냈습니다.`);
+                }
+
+                if (['K', 'Q', 'J'].includes(playedCard.value)) {
+                    setMessage(`AI가 [${playedCard.suit} ${playedCard.value}]를 내고 한 번 더 진행합니다!`);
+                    updateUI();
+                    setTimeout(aiTurn, 1200);
+                    return;
+                }
+            } else {
+                if (attackStack > 0) {
+                    setMessage(`AI가 방어하지 못해 ${attackStack}장의 카드를 가져갔습니다.`);
+                    for (let i = 0; i < attackStack; i++) {
+                        drawCard(aiHand);
+                    }
+                    attackStack = 0;
+                } else {
+                    drawCard(aiHand);
+                    setMessage("AI가 낼 카드가 없어 1장 뽑았습니다.");
                 }
             }
 
-            hasPlayedInTurn = false;
             isPlayerTurn = true;
             updateUI();
             checkWinner();
@@ -477,6 +513,10 @@
             document.getElementById('ai-count').innerText = aiHand.length;
             document.getElementById('deck-count').innerText = deck.length;
 
+            // 현재 진행 지정 모양 및 공격 상태 안내
+            const currentSuitDiv = document.getElementById('current-suit-status');
+            currentSuitDiv.innerText = `현재 진행 모양: [ ${currentSuit} ]`;
+
             const attackStatusDiv = document.getElementById('attack-status');
             attackStatusDiv.innerText = attackStack > 0 ? `⚠️ 누적 공격: +${attackStack}장` : '';
 
@@ -503,14 +543,6 @@
             topCardDiv.innerHTML = '';
             if (discardPile.length > 0) {
                 topCardDiv.appendChild(createCardUI(getTopCard()));
-            }
-
-            // 턴 넘기기 버튼 제어
-            const endBtn = document.getElementById('end-turn-btn');
-            if (isPlayerTurn && hasPlayedInTurn && !isGameOver) {
-                endBtn.style.display = 'inline-block';
-            } else {
-                endBtn.style.display = 'none';
             }
         }
 
