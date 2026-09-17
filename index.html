@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>원카드 게임 (VS AI)</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #2e7d32;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        /* 게임 보드 레이아웃 */
+        .board {
+            width: 100%;
+            max-width: 900px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* 영혁 지정 (AI, 중앙, 플레이어) */
+        .player-area {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .center-area {
+            display: flex;
+            gap: 40px;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+        }
+
+        .deck-container, .discard-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 카드리스트 영역 */
+        .hand {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 10px;
+            min-height: 110px;
+        }
+
+        /* 카드 디자인 */
+        .card {
+            width: 70px;
+            height: 100px;
+            background-color: white;
+            border-radius: 8px;
+            border: 2px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            color: black;
+            cursor: pointer;
+            user-select: none;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-10px);
+            box-shadow: 4px 8px 10px rgba(0,0,0,0.4);
+        }
+
+        .card.red {
+            color: #d32f2f;
+        }
+
+        .card.black {
+            color: #212121;
+        }
+
+        /* 카드 뒷면 */
+        .card.back {
+            background: linear-gradient(135deg, #1e88e5 25%, #1565c0 100%);
+            border: 2px solid #fff;
+            color: transparent;
+            cursor: pointer;
+        }
+
+        .card.back::after {
+            content: "🂠";
+            font-size: 40px;
+            color: rgba(255, 255, 255, 0.4);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+        }
+
+        /* 상태 및 메시지 표시 */
+        .status-msg {
+            font-size: 18px;
+            font-weight: bold;
+            height: 25px;
+            color: #ffeb3b;
+        }
+
+        .turn-indicator {
+            font-size: 20px;
+            font-weight: bold;
+            padding: 5px 15px;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            background-color: #ff9800;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+        }
+
+        button:hover {
+            background-color: #f57c00;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>🃏 원카드 (vs AI)</h1>
+    <div class="turn-indicator" id="turn-display">게임 시작 전</div>
+
+    <div class="board">
+        <!-- AI 영역 -->
+        <div class="player-area">
+            <h2>🤖 AI 상대 (<span id="ai-count">0</span>장)</h2>
+            <div class="hand" id="ai-hand"></div>
+        </div>
+
+        <!-- 중앙 영역 (덱 및 낸 카드 더미) -->
+        <div class="center-area">
+            <div class="deck-container">
+                <span>카드 덱 (<span id="deck-count">0</span>)</span>
+                <div class="card back" id="deck-card" onclick="playerDraw()"></div>
+            </div>
+            <div class="discard-container">
+                <span>현재 카드</span>
+                <div id="top-card"></div>
+            </div>
+        </div>
+
+        <div class="status-msg" id="message"></div>
+
+        <!-- 플레이어 영역 -->
+        <div class="player-area">
+            <h2>👤 내 카드 (<span id="player-count">0</span>장)</h2>
+            <div class="hand" id="player-hand"></div>
+        </div>
+    </div>
+
+    <button onclick="initGame()" style="margin-top: 15px;">게임 재시작</button>
+
+    <script>
+        const SUITS = ['♠', '♥', '♦', '♣'];
+        const VALUES = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+
+        let deck = [];
+        let playerHand = [];
+        let aiHand = [];
+        let discardPile = [];
+        let isPlayerTurn = true;
+        let isGameOver = false;
+
+        // 게임 초기화
+        function initGame() {
+            deck = createDeck();
+            shuffle(deck);
+            playerHand = [];
+            aiHand = [];
+            discardPile = [];
+            isGameOver = false;
+            isPlayerTurn = true;
+
+            // 각각 7장씩 나누어 줌
+            for (let i = 0; i < 7; i++) {
+                playerHand.push(deck.pop());
+                aiHand.push(deck.pop());
+            }
+
+            // 첫 번째 오픈 카드 설정 (특수 카드가 나올 때까지 반복)
+            let firstCard = deck.pop();
+            while (['A', '2', 'J', 'Q', 'K'].includes(firstCard.value)) {
+                deck.unshift(firstCard);
+                shuffle(deck);
+                firstCard = deck.pop();
+            }
+            discardPile.push(firstCard);
+
+            updateUI();
+            setMessage("게임을 시작합니다! 당신의 순서입니다.");
+        }
+
+        // 덱 생성
+        function createDeck() {
+            const newDeck = [];
+            for (let suit of SUITS) {
+                for (let value of VALUES) {
+                    newDeck.push({ suit, value });
+                }
+            }
+            return newDeck;
+        }
+
+        // 카드 섞기
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        // 카드 제출 가능 여부 확인
+        function isValidMove(card, topCard) {
+            return card.suit === topCard.suit || card.value === topCard.value;
+        }
+
+        // 플레이어가 카드 제출
+        function playCard(index) {
+            if (!isPlayerTurn || isGameOver) return;
+
+            const selectedCard = playerHand[index];
+            const topCard = getTopCard();
+
+            if (isValidMove(selectedCard, topCard)) {
+                playerHand.splice(index, 1);
+                discardPile.push(selectedCard);
+                
+                if (checkWinner()) return;
+
+                // 특수 카드 처리 (J: 건너뛰기, Q: 건너뛰기, K: 한 번 더)
+                if (selectedCard.value === 'K') {
+                    setMessage("K를 냈습니다! 한 번 더 내세요.");
+                    updateUI();
+                } else if (selectedCard.value === 'J' || selectedCard.value === 'Q') {
+                    setMessage(`${selectedCard.value}를 냈습니다! AI의 차례를 건너뜁니다.`);
+                    updateUI();
+                } else {
+                    isPlayerTurn = false;
+                    updateUI();
+                    setMessage("AI가 생각 중입니다...");
+                    setTimeout(aiTurn, 1200);
+                }
+            } else {
+                setMessage("낼 수 없는 카드입니다!");
+            }
+        }
+
+        // 플레이어가 카드 뽑기
+        function playerDraw() {
+            if (!isPlayerTurn || isGameOver) return;
+
+            drawCard(playerHand);
+            setMessage("카드를 한 장 뽑았습니다.");
+            isPlayerTurn = false;
+            updateUI();
+
+            if (!checkWinner()) {
+                setTimeout(aiTurn, 1200);
+            }
+        }
+
+        // AI 턴 로직
+        function aiTurn() {
+            if (isGameOver) return;
+
+            const topCard = getTopCard();
+            // 낼 수 있는 카드 탐색
+            const validCardIndex = aiHand.findIndex(card => isValidMove(card, topCard));
+
+            if (validCardIndex !== -1) {
+                const playedCard = aiHand.splice(validCardIndex, 1)[0];
+                discardPile.push(playedCard);
+
+                if (checkWinner()) return;
+
+                if (playedCard.value === 'K') {
+                    setMessage(`AI가 [${playedCard.suit} ${playedCard.value}]를 내고 한 번 더 진행합니다!`);
+                    updateUI();
+                    setTimeout(aiTurn, 1200);
+                    return;
+                } else if (playedCard.value === 'J' || playedCard.value === 'Q') {
+                    setMessage(`AI가 [${playedCard.suit} ${playedCard.value}]를 내어 당신의 턴을 스킵했습니다!`);
+                    updateUI();
+                    setTimeout(aiTurn, 1200);
+                    return;
+                } else {
+                    setMessage(`AI가 [${playedCard.suit} ${playedCard.value}]를 냈습니다.`);
+                }
+            } else {
+                drawCard(aiHand);
+                setMessage("AI가 낼 카드가 없어 카드를 한 장 뽑았습니다.");
+            }
+
+            isPlayerTurn = true;
+            updateUI();
+            checkWinner();
+        }
+
+        // 카드 뽑기 (덱이 부족하면 버린 카드 더미를 다시 섞음)
+        function drawCard(hand) {
+            if (deck.length === 0) {
+                if (discardPile.length > 1) {
+                    const top = discardPile.pop();
+                    deck = [...discardPile];
+                    discardPile = [top];
+                    shuffle(deck);
+                    setMessage("덱이 없어 버린 카드를 다시 섞었습니다.");
+                } else {
+                    setMessage("더 이상 뽑을 수 있는 카드가 없습니다!");
+                    return;
+                }
+            }
+            hand.push(deck.pop());
+        }
+
+        // 상단 카드 가져오기
+        function getTopCard() {
+            return discardPile[discardPile.length - 1];
+        }
+
+        // 승리 조건 체크 (또는 15장 이상 보유 시 패배 규칙)
+        function checkWinner() {
+            if (playerHand.length === 0) {
+                setMessage("🎉 축하합니다! 당신이 승리했습니다!");
+                isGameOver = true;
+                updateUI();
+                return true;
+            } else if (aiHand.length === 0) {
+                setMessage("🤖 AI가 승리했습니다. 다시 도전해보세요!");
+                isGameOver = true;
+                updateUI();
+                return true;
+            } else if (playerHand.length >= 15) {
+                setMessage("소지 카드가 15장이 넘어 패배했습니다!");
+                isGameOver = true;
+                updateUI();
+                return true;
+            } else if (aiHand.length >= 15) {
+                setMessage("AI의 카드가 15장이 넘어 당신이 승리했습니다!");
+                isGameOver = true;
+                updateUI();
+                return true;
+            }
+            return false;
+        }
+
+        // 화면 상태 업데이트
+        function updateUI() {
+            // 턴 표시
+            const turnDisplay = document.getElementById('turn-display');
+            if (isGameOver) {
+                turnDisplay.innerText = "게임 종료";
+            } else {
+                turnDisplay.innerText = isPlayerTurn ? "👤 당신의 턴" : "🤖 AI의 턴";
+            }
+
+            // 카드 수 업데이트
+            document.getElementById('player-count').innerText = playerHand.length;
+            document.getElementById('ai-count').innerText = aiHand.length;
+            document.getElementById('deck-count').innerText = deck.length;
+
+            // AI 카드 (뒷면으로 표시)
+            const aiHandDiv = document.getElementById('ai-hand');
+            aiHandDiv.innerHTML = '';
+            aiHand.forEach(() => {
+                const cardEl = document.createElement('div');
+                cardEl.className = 'card back';
+                aiHandDiv.appendChild(cardEl);
+            });
+
+            // 내 카드
+            const playerHandDiv = document.getElementById('player-hand');
+            playerHandDiv.innerHTML = '';
+            playerHand.forEach((card, index) => {
+                const cardEl = createCardUI(card);
+                cardEl.onclick = () => playCard(index);
+                playerHandDiv.appendChild(cardEl);
+            });
+
+            // 중앙 카드 (버려진 더미 최상단 카드)
+            const topCardDiv = document.getElementById('top-card');
+            topCardDiv.innerHTML = '';
+            if (discardPile.length > 0) {
+                topCardDiv.appendChild(createCardUI(getTopCard()));
+            }
+        }
+
+        // 카드 Element 생성 함수
+        function createCardUI(card) {
+            const cardEl = document.createElement('div');
+            const isRed = card.suit === '♥' || card.suit === '♦';
+            cardEl.className = `card ${isRed ? 'red' : 'black'}`;
+
+            cardEl.innerHTML = `
+                <div>${card.value}</div>
+                <div style="text-align: center; font-size: 24px;">${card.suit}</div>
+                <div style="text-align: right;">${card.value}</div>
+            `;
+            return cardEl;
+        }
+
+        function setMessage(msg) {
+            document.getElementById('message').innerText = msg;
+        }
+
+        // 페이지 로드 시 게임 자동 시작
+        window.onload = initGame;
+    </script>
+</body>
+</html>
