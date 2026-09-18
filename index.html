@@ -206,7 +206,7 @@
             display: none;
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.75);
             justify-content: center;
             align-items: center;
             z-index: 100;
@@ -219,6 +219,8 @@
             border-radius: 12px;
             text-align: center;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            max-width: 500px;
+            width: 90%;
         }
 
         .suit-btn-group {
@@ -240,6 +242,35 @@
         .suit-btn.red { color: #d32f2f; }
         .suit-btn.black { color: #212121; }
         .suit-btn:hover { background: #e0e0e0; }
+
+        .jotaro-choice-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .jotaro-btn {
+            padding: 12px 15px;
+            font-size: 16px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .jotaro-btn-1 {
+            background-color: #d32f2f;
+            color: white;
+        }
+        .jotaro-btn-1:hover { background-color: #b71c1c; }
+
+        .jotaro-btn-2 {
+            background-color: #6a1b9a;
+            color: white;
+        }
+        .jotaro-btn-2:hover { background-color: #4a148c; }
     </style>
 </head>
 <body>
@@ -275,7 +306,7 @@
             <h2>👤 내 카드 (<span id="player-count">0</span>장)</h2>
             <div class="hand" id="player-hand"></div>
             <div class="action-btn-group">
-                <button class="end-turn-btn" id="end-turn-btn" onclick="endPlayerTurn()" style="display: none;">턴 넘기기 (같은 숫자 제출 완료)</button>
+                <button class="end-turn-btn" id="end-turn-btn" onclick="endPlayerTurn()" style="display: none;">턴 넘기기</button>
             </div>
         </div>
     </div>
@@ -295,6 +326,18 @@
         </div>
     </div>
 
+    <!-- 죠타로 능력 선택 모달 -->
+    <div class="modal" id="jotaro-modal">
+        <div class="modal-content">
+            <h3>⭐ "같은 타입의 스탠드인가..."</h3>
+            <p style="margin-top: 8px; color: #555;">DIO가 등장했었습니다! 발동할 능력을 선택하세요.</p>
+            <div class="jotaro-choice-group">
+                <button class="jotaro-btn jotaro-btn-1" onclick="selectJotaroAbility(1)">👊 오라오라 연타 [공격 +5장 (방어불가)]</button>
+                <button class="jotaro-btn jotaro-btn-2" onclick="selectJotaroAbility(2)">⏳ 스타 플래티나 더 월드! [추가 턴 +2회 & 공격 +3장]</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const SUITS = ['♠', '♥', '♦', '♣'];
         const VALUES = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -308,9 +351,10 @@
 
         let attackStack = 0;
         let isUnblockableAttack = false;
-        let extraTurns = 0; // 추가 턴 카운터 (DIO 능력)
+        let extraTurns = 0; // 추가 턴 카운터
         let currentSuit = '';
         let hasPlayedInTurn = false;
+        let hasDioAppeared = false; // DIO 카드가 등장했었는지 유무 기록
 
         function initGame() {
             deck = createDeck();
@@ -324,6 +368,7 @@
             isUnblockableAttack = false;
             extraTurns = 0;
             hasPlayedInTurn = false;
+            hasDioAppeared = false;
 
             for (let i = 0; i < 7; i++) {
                 playerHand.push(deck.pop());
@@ -351,15 +396,10 @@
                     newDeck.push({ suit, value });
                 }
             }
-            // 조커 2장
             newDeck.push({ suit: 'BLACK', value: 'JOKER_BW' });
             newDeck.push({ suit: 'COLOR', value: 'JOKER_COLOR' });
-
-            // 죠타로 카드 2장
             newDeck.push({ suit: 'BLACK', value: 'JOTARO_BW' });
             newDeck.push({ suit: 'COLOR', value: 'JOTARO_COLOR' });
-
-            // DIO 카드 2장 추가
             newDeck.push({ suit: 'BLACK', value: 'DIO_BW' });
             newDeck.push({ suit: 'COLOR', value: 'DIO_COLOR' });
 
@@ -374,11 +414,8 @@
         }
 
         function isValidMove(card, topCard) {
-            if (attackStack > 0 && isUnblockableAttack) {
-                return false;
-            }
-
-            if (attackStack > 0) {
+            if (attackStack > 0 && extraTurns === 0) {
+                if (isUnblockableAttack) return false;
                 if (card.value === '3') return true;
                 if (card.value === 'JOKER_COLOR' || card.value === 'JOKER_BW') return true;
                 if (card.value === 'JOTARO_COLOR' || card.value === 'JOTARO_BW') return true;
@@ -390,7 +427,6 @@
                 return card.value === topCard.value;
             }
 
-            // 특수 카드 제출 조건
             if (card.value === 'JOKER_BW' || card.value === 'JOTARO_BW' || card.value === 'DIO_BW') {
                 return currentSuit === '♠' || currentSuit === '♣' || currentSuit === 'BLACK';
             }
@@ -398,7 +434,6 @@
                 return currentSuit === '♥' || currentSuit === '♦' || currentSuit === 'COLOR';
             }
 
-            // 바닥에 특수 카드가 놓여있을 때
             if (['JOKER_BW', 'JOTARO_BW', 'DIO_BW'].includes(topCard.value)) {
                 return card.suit === '♠' || card.suit === '♣';
             }
@@ -424,6 +459,13 @@
                 }
                 hasPlayedInTurn = true;
 
+                // 죠타로 카드이고 DIO가 이전에 등장했던 경우 모달 띄우기
+                if ((selectedCard.value === 'JOTARO_BW' || selectedCard.value === 'JOTARO_COLOR') && hasDioAppeared) {
+                    document.getElementById('jotaro-modal').style.display = 'flex';
+                    updateUI();
+                    return;
+                }
+
                 applyCardEffect(selectedCard);
 
                 if (checkWinner()) return;
@@ -435,7 +477,7 @@
                 }
 
                 if (['K', 'Q', 'J'].includes(selectedCard.value)) {
-                    setMessage(`${selectedCard.value}를 냈습니다! 한 번 더 내실 수 있습니다.`);
+                    setMessage(`${selectedCard.value}를 냈습니다! 연속으로 카드를 더 내세요.`);
                     hasPlayedInTurn = false;
                     updateUI();
                     return;
@@ -443,8 +485,8 @@
 
                 const canPlayMoreSameValue = playerHand.some(card => card.value === selectedCard.value);
 
-                if (canPlayMoreSameValue) {
-                    setMessage(`같은 카드(${getCardLabel(selectedCard.value)})를 더 내거나 [턴 넘기기]를 누르세요.`);
+                if (canPlayMoreSameValue || extraTurns > 0) {
+                    setMessage(`카드를 제출했습니다. 연속 카드를 더 내거나 [턴 넘기기]를 누르세요.`);
                 } else {
                     endPlayerTurn();
                     return;
@@ -452,11 +494,37 @@
 
                 updateUI();
             } else {
-                if (attackStack > 0 && isUnblockableAttack) {
+                if (attackStack > 0 && isUnblockableAttack && extraTurns === 0) {
                     setMessage("💥 죠타로의 공격은 방어할 수 없습니다! 덱을 눌러 카드를 뽑으세요.");
                 } else {
                     setMessage("낼 수 없는 카드입니다!");
                 }
+            }
+        }
+
+        function selectJotaroAbility(option) {
+            document.getElementById('jotaro-modal').style.display = 'none';
+
+            if (option === 1) {
+                // 선택 1: 공격 +5장 (방어불가)
+                attackStack += 5;
+                isUnblockableAttack = true;
+                setMessage("👊 오라오라오라! 죠타로 등장! 절대 방어 불가 +5장 공격!");
+            } else if (option === 2) {
+                // 선택 2: 추가 턴 +2회 & 공격 +3장
+                extraTurns += 2;
+                attackStack += 3;
+                setMessage("⏳ 스타 플래티나 더 월드! 시간 정지 +2턴 & 공격 +3장 적용!");
+            }
+
+            if (checkWinner()) return;
+
+            const canPlayMoreSameValue = playerHand.some(card => card.value.includes('JOTARO'));
+            if (canPlayMoreSameValue || extraTurns > 0) {
+                setMessage(`능력을 사용했습니다. 연속 카드를 더 내거나 [턴 넘기기]를 누르세요.`);
+                updateUI();
+            } else {
+                endPlayerTurn();
             }
         }
 
@@ -465,8 +533,8 @@
             document.getElementById('suit-modal').style.display = 'none';
 
             const canPlayMore7 = playerHand.some(card => card.value === '7');
-            if (canPlayMore7) {
-                setMessage(`지정 모양이 [ ${suit} ](으)로 변경되었습니다. 7 카드를 더 내거나 [턴 넘기기]를 누르세요.`);
+            if (canPlayMore7 || extraTurns > 0) {
+                setMessage(`지정 모양이 [ ${suit} ](으)로 변경되었습니다. 카드를 더 내거나 [턴 넘기기]를 누르세요.`);
                 updateUI();
             } else {
                 setMessage(`지정 모양이 [ ${suit} ](으)로 변경되었습니다.`);
@@ -484,10 +552,11 @@
                 isUnblockableAttack = true;
                 setMessage("👊 오라오라오라! 죠타로 등장! 절대 방어 불가 +5장 공격!");
             } else if (card.value === 'DIO_BW' || card.value === 'DIO_COLOR') {
-                extraTurns += 2; // 추가로 2턴을 더 진행 (총 3턴 연속 진행)
-                setMessage("⏳ 더 월드! 시간이여 멈춰라! 앞으로 3턴 연속 플레이!");
+                extraTurns += 3;
+                hasDioAppeared = true; // DIO 등장 기록
+                setMessage("⏳ 더 월드! 시간이여 멈춰라! 앞으로 추가 3턴 플레이!");
             } else if (card.value === '3') {
-                if (attackStack > 0) {
+                if (attackStack > 0 && extraTurns === 0) {
                     setMessage("🛡️ 3 카드로 모든 공격을 방어했습니다!");
                     attackStack = 0;
                     isUnblockableAttack = false;
@@ -500,10 +569,9 @@
 
             hasPlayedInTurn = false;
 
-            // 추가 턴(DIO 능력)이 남아있는 경우
             if (extraTurns > 0) {
                 extraTurns--;
-                setMessage(`⏳ 시간이 멈춰있습니다! (남은 추가 턴: ${extraTurns + 1}회)`);
+                setMessage(`⏳ 시간 정지 지속 중! (남은 추가 턴: ${extraTurns}회)`);
                 updateUI();
                 return;
             }
@@ -522,7 +590,7 @@
                 return;
             }
 
-            if (attackStack > 0) {
+            if (attackStack > 0 && extraTurns === 0) {
                 const msg = isUnblockableAttack 
                     ? `💥 죠타로의 공격을 막지 못해 카드 ${attackStack}장을 가져옵니다!` 
                     : `공격을 막지 못해 카드 ${attackStack}장을 가져옵니다.`;
@@ -542,7 +610,7 @@
 
             if (extraTurns > 0) {
                 extraTurns--;
-                setMessage(`⏳ 카드를 뽑았습니다. 시간이 계속 멈춰있습니다! (남은 추가 턴: ${extraTurns + 1}회)`);
+                setMessage(`⏳ 시간이 멈춰있습니다! (남은 추가 턴: ${extraTurns}회)`);
                 updateUI();
                 return;
             }
@@ -575,7 +643,20 @@
                     hasPlayedInTurn = true;
                     playedAny = true;
 
-                    applyCardEffect(playedCard);
+                    // AI의 죠타로 처리 (DIO가 나온 적이 있으면 AI도 50% 확률로 시간정지/연타 선택)
+                    if (playedCard.value.includes('JOTARO') && hasDioAppeared) {
+                        if (Math.random() < 0.5) {
+                            extraTurns += 2;
+                            attackStack += 3;
+                            setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 내고 [시간 정지 +2턴 & 공격 +3장]을 선택했습니다!`);
+                        } else {
+                            attackStack += 5;
+                            isUnblockableAttack = true;
+                            setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 내고 [절대 방어 불가 +5장 공격]을 선택했습니다!`);
+                        }
+                    } else {
+                        applyCardEffect(playedCard);
+                    }
 
                     if (checkWinner()) return;
 
@@ -596,9 +677,9 @@
                         setMessage(`AI가 7을 내고 진행 모양을 [ ${currentSuit} ](으)로 바꿨습니다!`);
                     } else if (playedCard.value.includes('DIO')) {
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 내고 시간을 멈췄습니다!`);
-                    } else if (playedCard.value.includes('JOTARO')) {
+                    } else if (playedCard.value.includes('JOTARO') && !hasDioAppeared) {
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 냈습니다! 절대 피할 수 없습니다!`);
-                    } else {
+                    } else if (!playedCard.value.includes('JOTARO')) {
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 냈습니다.`);
                     }
 
@@ -611,14 +692,14 @@
                     }
 
                     const hasMoreSameValue = aiHand.some(card => card.value === playedCard.value);
-                    if (hasMoreSameValue) {
+                    if (hasMoreSameValue || extraTurns > 0) {
                         continue;
                     } else {
                         break;
                     }
                 } else {
                     if (!playedAny) {
-                        if (attackStack > 0) {
+                        if (attackStack > 0 && extraTurns === 0) {
                             const msg = isUnblockableAttack 
                                 ? `💥 AI가 죠타로의 공격을 받아 ${attackStack}장의 카드를 가져갔습니다!` 
                                 : `AI가 방어하지 못해 ${attackStack}장의 카드를 가져갔습니다.`;
@@ -640,10 +721,9 @@
 
             hasPlayedInTurn = false;
 
-            // AI가 DIO를 사용했을 경우 3턴 연속 수행
             if (extraTurns > 0) {
                 extraTurns--;
-                setMessage(`⏳ AI가 시간을 멈췄습니다! AI의 추가 턴 진행 중... (남은 턴: ${extraTurns + 1}회)`);
+                setMessage(`⏳ AI가 시간을 멈췄습니다! AI 추가 턴 진행 중... (남은 턴: ${extraTurns}회)`);
                 updateUI();
                 setTimeout(aiTurn, 1200);
                 return;
@@ -713,7 +793,7 @@
                 turnDisplay.innerText = "게임 종료";
             } else {
                 let text = isPlayerTurn ? "👤 당신의 턴" : "🤖 AI의 턴";
-                if (extraTurns > 0) text += ` ⏳ (시간 정지 중! +${extraTurns}턴)`;
+                if (extraTurns > 0) text += ` ⏳ (시간 정지 지속 중! 남은 추가 턴: ${extraTurns}회)`;
                 turnDisplay.innerText = text;
             }
 
@@ -760,7 +840,7 @@
 
             // 턴 넘기기 버튼 제어
             const endBtn = document.getElementById('end-turn-btn');
-            if (isPlayerTurn && hasPlayedInTurn && !isGameOver) {
+            if (isPlayerTurn && (hasPlayedInTurn || extraTurns > 0) && !isGameOver) {
                 endBtn.style.display = 'inline-block';
             } else {
                 endBtn.style.display = 'none';
