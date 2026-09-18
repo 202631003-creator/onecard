@@ -95,7 +95,6 @@
         .card.red { color: #d32f2f; }
         .card.black { color: #212121; }
         
-        /* 조커 스타일 */
         .card.color-joker {
             background: linear-gradient(135deg, #fff3e0, #ffe0b2);
             border: 2px solid #ff9800;
@@ -107,7 +106,6 @@
             color: #212121;
         }
 
-        /* 죠타로 카드 스타일 */
         .card.bw-jotaro {
             background: linear-gradient(135deg, #37474f, #212121);
             border: 2px solid #9e9e9e;
@@ -119,7 +117,6 @@
             color: #ffe57f;
         }
 
-        /* DIO 카드 스타일 */
         .card.bw-dio {
             background: linear-gradient(135deg, #424242, #111111);
             border: 2px solid #ffd700;
@@ -129,6 +126,13 @@
             background: linear-gradient(135deg, #fbc02d, #f57f17);
             border: 2px solid #212121;
             color: #212121;
+        }
+
+        .card.giorno {
+            background: linear-gradient(135deg, #fbc02d, #e91e63);
+            border: 2px solid #00e676;
+            color: #ffffff;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.6);
         }
 
         .card.back {
@@ -201,7 +205,6 @@
         .end-turn-btn { background-color: #e91e63; }
         .end-turn-btn:hover { background-color: #c2185b; }
 
-        /* 모달 스타일 */
         .modal {
             display: none;
             position: fixed;
@@ -260,17 +263,21 @@
             transition: background 0.2s;
         }
 
-        .jotaro-btn-1 {
-            background-color: #d32f2f;
-            color: white;
-        }
+        .jotaro-btn-1 { background-color: #d32f2f; color: white; }
         .jotaro-btn-1:hover { background-color: #b71c1c; }
 
-        .jotaro-btn-2 {
-            background-color: #6a1b9a;
-            color: white;
-        }
+        .jotaro-btn-2 { background-color: #6a1b9a; color: white; }
         .jotaro-btn-2:hover { background-color: #4a148c; }
+
+        .giorno-btn {
+            background-color: #ffd700;
+            color: #000;
+            font-size: 18px;
+            padding: 15px 25px;
+            margin-top: 15px;
+            border: 2px solid #e91e63;
+        }
+        .giorno-btn:hover { background-color: #ffecb3; }
     </style>
 </head>
 <body>
@@ -338,6 +345,15 @@
         </div>
     </div>
 
+    <!-- 죠르노 승리 카운터 모달 -->
+    <div class="modal" id="giorno-modal">
+        <div class="modal-content">
+            <h3>🐞 "이것이... 레퀴엠이다."</h3>
+            <p style="margin-top: 10px; color: #333;">AI가 카드를 모두 냈습니다! 죠르노의 능력으로 상대의 승리 행동을 0으로 되돌리시겠습니까?</p>
+            <button class="giorno-btn" onclick="activateGiornoCounter()">🐞 GER 발동! (승리 무효화 + 7장 반격)</button>
+        </div>
+    </div>
+
     <script>
         const SUITS = ['♠', '♥', '♦', '♣'];
         const VALUES = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
@@ -351,10 +367,11 @@
 
         let attackStack = 0;
         let isUnblockableAttack = false;
-        let extraTurns = 0; // 추가 턴 카운터
+        let extraTurns = 0;
         let currentSuit = '';
         let hasPlayedInTurn = false;
-        let hasDioAppeared = false; // DIO 카드가 등장했었는지 유무 기록
+        let hasDioAppeared = false;
+        let lastPlayedCardByAI = null;
 
         function initGame() {
             deck = createDeck();
@@ -369,6 +386,7 @@
             extraTurns = 0;
             hasPlayedInTurn = false;
             hasDioAppeared = false;
+            lastPlayedCardByAI = null;
 
             for (let i = 0; i < 7; i++) {
                 playerHand.push(deck.pop());
@@ -376,7 +394,7 @@
             }
 
             let firstCard = deck.pop();
-            const specialValues = ['A', '2', '3', '7', 'J', 'Q', 'K', 'JOKER_BW', 'JOKER_COLOR', 'JOTARO_BW', 'JOTARO_COLOR', 'DIO_BW', 'DIO_COLOR'];
+            const specialValues = ['A', '2', '3', '7', 'J', 'Q', 'K', 'JOKER_BW', 'JOKER_COLOR', 'JOTARO_BW', 'JOTARO_COLOR', 'DIO_BW', 'DIO_COLOR', 'GIORNO'];
             while (specialValues.includes(firstCard.value)) {
                 deck.unshift(firstCard);
                 shuffle(deck);
@@ -402,6 +420,7 @@
             newDeck.push({ suit: 'COLOR', value: 'JOTARO_COLOR' });
             newDeck.push({ suit: 'BLACK', value: 'DIO_BW' });
             newDeck.push({ suit: 'COLOR', value: 'DIO_COLOR' });
+            newDeck.push({ suit: 'GOLD', value: 'GIORNO' });
 
             return newDeck;
         }
@@ -414,7 +433,9 @@
         }
 
         function isValidMove(card, topCard) {
-            if (attackStack > 0 && extraTurns === 0) {
+            if (card.value === 'GIORNO') return true;
+
+            if (attackStack > 0 && extraTurns === 0 && !hasPlayedInTurn) {
                 if (isUnblockableAttack) return false;
                 if (card.value === '3') return true;
                 if (card.value === 'JOKER_COLOR' || card.value === 'JOKER_BW') return true;
@@ -452,6 +473,12 @@
 
             if (isValidMove(selectedCard, topCard)) {
                 playerHand.splice(index, 1);
+
+                if (selectedCard.value === 'GIORNO') {
+                    playGiornoCard(selectedCard);
+                    return;
+                }
+
                 discardPile.push(selectedCard);
 
                 if (selectedCard.suit !== 'BLACK' && selectedCard.suit !== 'COLOR') {
@@ -459,7 +486,6 @@
                 }
                 hasPlayedInTurn = true;
 
-                // 죠타로 카드이고 DIO가 이전에 등장했던 경우 모달 띄우기
                 if ((selectedCard.value === 'JOTARO_BW' || selectedCard.value === 'JOTARO_COLOR') && hasDioAppeared) {
                     document.getElementById('jotaro-modal').style.display = 'flex';
                     updateUI();
@@ -494,11 +520,41 @@
 
                 updateUI();
             } else {
-                if (attackStack > 0 && isUnblockableAttack && extraTurns === 0) {
-                    setMessage("💥 죠타로의 공격은 방어할 수 없습니다! 덱을 눌러 카드를 뽑으세요.");
+                if (attackStack > 0 && isUnblockableAttack && extraTurns === 0 && !hasPlayedInTurn) {
+                    setMessage("💥 방어 불가능한 공격입니다! 덱에서 카드를 뽑으세요.");
                 } else {
                     setMessage("낼 수 없는 카드입니다!");
                 }
+            }
+        }
+
+        function playGiornoCard(giornoCard) {
+            discardPile.push(giornoCard);
+
+            if (lastPlayedCardByAI) {
+                const poppedCard = discardPile.splice(discardPile.indexOf(lastPlayedCardByAI), 1)[0];
+                if (poppedCard) {
+                    aiHand.push(poppedCard);
+                }
+                lastPlayedCardByAI = null;
+            }
+
+            attackStack = 7;
+            isUnblockableAttack = true;
+            setMessage("🐞 GER '진실에 도달할 일은 없다'! 상대의 행동을 0으로 되돌리고 방어불가 +7장 공격!");
+
+            if (checkWinner()) return;
+            endPlayerTurn();
+        }
+
+        function activateGiornoCounter() {
+            document.getElementById('giorno-modal').style.display = 'none';
+            isGameOver = false;
+
+            const giornoIndex = playerHand.findIndex(c => c.value === 'GIORNO');
+            if (giornoIndex !== -1) {
+                const giornoCard = playerHand.splice(giornoIndex, 1)[0];
+                playGiornoCard(giornoCard);
             }
         }
 
@@ -506,12 +562,10 @@
             document.getElementById('jotaro-modal').style.display = 'none';
 
             if (option === 1) {
-                // 선택 1: 공격 +5장 (방어불가)
                 attackStack += 5;
                 isUnblockableAttack = true;
                 setMessage("👊 오라오라오라! 죠타로 등장! 절대 방어 불가 +5장 공격!");
             } else if (option === 2) {
-                // 선택 2: 추가 턴 +2회 & 공격 +3장
                 extraTurns += 2;
                 attackStack += 3;
                 setMessage("⏳ 스타 플래티나 더 월드! 시간 정지 +2턴 & 공격 +3장 적용!");
@@ -553,10 +607,10 @@
                 setMessage("👊 오라오라오라! 죠타로 등장! 절대 방어 불가 +5장 공격!");
             } else if (card.value === 'DIO_BW' || card.value === 'DIO_COLOR') {
                 extraTurns += 3;
-                hasDioAppeared = true; // DIO 등장 기록
+                hasDioAppeared = true;
                 setMessage("⏳ 더 월드! 시간이여 멈춰라! 앞으로 추가 3턴 플레이!");
             } else if (card.value === '3') {
-                if (attackStack > 0 && extraTurns === 0) {
+                if (attackStack > 0 && extraTurns === 0 && !hasPlayedInTurn) {
                     setMessage("🛡️ 3 카드로 모든 공격을 방어했습니다!");
                     attackStack = 0;
                     isUnblockableAttack = false;
@@ -585,14 +639,31 @@
         function playerDraw() {
             if (!isPlayerTurn || isGameOver) return;
 
+            // 카드를 이미 제출한 상태에서 보충 카드를 뽑는 경우 (자신이 낸 공격을 자신이 받지 않도록 처리)
             if (hasPlayedInTurn) {
-                setMessage("이미 카드를 냈습니다. [턴 넘기기]를 눌러 차례를 마쳐주세요.");
+                drawCard(playerHand);
+                setMessage("카드를 1장 보충했습니다.");
+                hasPlayedInTurn = false;
+
+                if (extraTurns > 0) {
+                    extraTurns--;
+                    setMessage(`⏳ 시간이 멈춰있습니다! (남은 추가 턴: ${extraTurns}회)`);
+                    updateUI();
+                    return;
+                }
+
+                isPlayerTurn = false;
+                updateUI();
+                if (!checkWinner()) {
+                    setTimeout(aiTurn, 1200);
+                }
                 return;
             }
 
+            // 카드를 내지 못해서 적의 공격 스택을 받아야 하는 경우
             if (attackStack > 0 && extraTurns === 0) {
                 const msg = isUnblockableAttack 
-                    ? `💥 죠타로의 공격을 막지 못해 카드 ${attackStack}장을 가져옵니다!` 
+                    ? `💥 강력한 공격을 막지 못해 카드 ${attackStack}장을 가져옵니다!` 
                     : `공격을 막지 못해 카드 ${attackStack}장을 가져옵니다.`;
                 setMessage(msg);
 
@@ -636,15 +707,19 @@
                 if (validCardIndex !== -1) {
                     const playedCard = aiHand.splice(validCardIndex, 1)[0];
                     discardPile.push(playedCard);
+                    lastPlayedCardByAI = playedCard;
                     
-                    if (playedCard.suit !== 'BLACK' && playedCard.suit !== 'COLOR') {
+                    if (playedCard.suit !== 'BLACK' && playedCard.suit !== 'COLOR' && playedCard.suit !== 'GOLD') {
                         currentSuit = playedCard.suit;
                     }
                     hasPlayedInTurn = true;
                     playedAny = true;
 
-                    // AI의 죠타로 처리 (DIO가 나온 적이 있으면 AI도 50% 확률로 시간정지/연타 선택)
-                    if (playedCard.value.includes('JOTARO') && hasDioAppeared) {
+                    if (playedCard.value === 'GIORNO') {
+                        attackStack = 7;
+                        isUnblockableAttack = true;
+                        setMessage("🐞 AI가 [죠르노]를 내고 GER 발동! 방어 불가 +7장 공격!");
+                    } else if (playedCard.value.includes('JOTARO') && hasDioAppeared) {
                         if (Math.random() < 0.5) {
                             extraTurns += 2;
                             attackStack += 3;
@@ -679,7 +754,7 @@
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 내고 시간을 멈췄습니다!`);
                     } else if (playedCard.value.includes('JOTARO') && !hasDioAppeared) {
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 냈습니다! 절대 피할 수 없습니다!`);
-                    } else if (!playedCard.value.includes('JOTARO')) {
+                    } else if (!playedCard.value.includes('JOTARO') && playedCard.value !== 'GIORNO') {
                         setMessage(`AI가 [${getCardLabel(playedCard.value)}]를 냈습니다.`);
                     }
 
@@ -701,7 +776,7 @@
                     if (!playedAny) {
                         if (attackStack > 0 && extraTurns === 0) {
                             const msg = isUnblockableAttack 
-                                ? `💥 AI가 죠타로의 공격을 받아 ${attackStack}장의 카드를 가져갔습니다!` 
+                                ? `💥 AI가 방어 불가능한 공격을 받아 ${attackStack}장의 카드를 가져갔습니다!` 
                                 : `AI가 방어하지 못해 ${attackStack}장의 카드를 가져갔습니다.`;
                             setMessage(msg);
 
@@ -759,6 +834,7 @@
             if (value === 'JOTARO_COLOR') return '⭐ 컬러죠타로';
             if (value === 'DIO_BW') return '⏳ 흑백DIO';
             if (value === 'DIO_COLOR') return '⏳ 컬러DIO';
+            if (value === 'GIORNO') return '🐞 죠르노';
             return value;
         }
 
@@ -769,6 +845,12 @@
                 updateUI();
                 return true;
             } else if (aiHand.length === 0) {
+                const hasGiorno = playerHand.some(c => c.value === 'GIORNO');
+                if (hasGiorno) {
+                    document.getElementById('giorno-modal').style.display = 'flex';
+                    return false;
+                }
+
                 setMessage("🤖 AI가 승리했습니다. 다시 도전해보세요!");
                 isGameOver = true;
                 updateUI();
@@ -813,7 +895,6 @@
                 attackStatusDiv.innerText = '';
             }
 
-            // AI 카드
             const aiHandDiv = document.getElementById('ai-hand');
             aiHandDiv.innerHTML = '';
             aiHand.forEach(() => {
@@ -822,7 +903,6 @@
                 aiHandDiv.appendChild(cardEl);
             });
 
-            // 내 카드
             const playerHandDiv = document.getElementById('player-hand');
             playerHandDiv.innerHTML = '';
             playerHand.forEach((card, index) => {
@@ -831,14 +911,12 @@
                 playerHandDiv.appendChild(cardEl);
             });
 
-            // 중앙 카드
             const topCardDiv = document.getElementById('top-card');
             topCardDiv.innerHTML = '';
             if (discardPile.length > 0) {
                 topCardDiv.appendChild(createCardUI(getTopCard()));
             }
 
-            // 턴 넘기기 버튼 제어
             const endBtn = document.getElementById('end-turn-btn');
             if (isPlayerTurn && (hasPlayedInTurn || extraTurns > 0) && !isGameOver) {
                 endBtn.style.display = 'inline-block';
@@ -891,6 +969,13 @@
                     <div style="font-size: 12px;">DIO</div>
                     <div style="text-align: center; font-size: 20px;">⏳</div>
                     <div style="text-align: right; font-size: 12px;">CLR</div>
+                `;
+            } else if (card.value === 'GIORNO') {
+                cardEl.className = 'card giorno';
+                cardEl.innerHTML = `
+                    <div style="font-size: 12px;">GER</div>
+                    <div style="text-align: center; font-size: 20px;">🐞</div>
+                    <div style="text-align: right; font-size: 12px;">GER</div>
                 `;
             } else {
                 const isRed = card.suit === '♥' || card.suit === '♦';
